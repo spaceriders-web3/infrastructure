@@ -1,0 +1,11 @@
+{
+  "availability-zones:account=657117221658:region=eu-west-1": [
+    "eu-west-1a",
+    "eu-west-1b",
+    "eu-west-1c"
+  ],
+  "hosted-zone:account=657117221658:domainName=spaceriders.io.:region=eu-west-1": {
+    "Id": "/hostedzone/Z042842830PEVAO6DPQ8P",
+    "Name": "spaceriders.io."
+  }
+}
