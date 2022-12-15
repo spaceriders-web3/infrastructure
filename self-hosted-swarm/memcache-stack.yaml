@@ -1,0 +1,26 @@
+version: '3.7'
+
+services:
+  cache:
+    image: bitnami/memcached:latest
+    restart: always
+    ports:
+      - 11211:11211
+    environment:
+      MEMCACHED_MAX_CONNECTIONS: 5000
+    networks:
+      - public
+    deploy:
+      replicas: 1
+      placement: 
+        constraints: [node.role == manager]
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+
+networks:
+  public:
+    external: true
+    driver: overlay

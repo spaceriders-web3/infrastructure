@@ -1,0 +1,113 @@
+version: '3.7'
+
+x-environment: &environment
+  TIMEOUT: ${TIMEOUT}
+  ENV: ${ENV}
+  DB_URL: ${DB_URL}
+  DB_NAME: ${DB_NAME}
+  SECRET_KEY: ${SECRET_KEY}
+  LOG_LEVEL: ${LOG_LEVEL}
+
+  CACHE_DRIVER: ${CACHE_DRIVER}
+  CACHE_HOST: ${CACHE_HOST}
+  CACHE_PORT: ${CACHE_PORT}
+
+  PUBLIC_KEY: ${PUBLIC_KEY}
+  RPCS_URL_MAINNET: ${RPCS_URL_MAINNET}
+  CHAIN_ID: ${CHAIN_ID}
+  CHAIN_NAME: ${CHAIN_NAME}
+  RPCS_URL: ${RPCS_URL}
+  API_ENDPOINT: ${API_ENDPOINT}
+
+  PLANET_IMAGES_BUCKET_PATH: ${PLANET_IMAGES_BUCKET_PATH}
+  TESTNET_TICKET_IMAGES_BUCKET_PATH: ${TESTNET_TICKET_IMAGES_BUCKET_PATH}
+  MEDIUM_ACCOUNT: ${MEDIUM_ACCOUNT}
+  PRIVATE_KEY: ${PRIVATE_KEY}
+
+services:
+  api:
+    image: 657117221658.dkr.ecr.eu-west-1.amazonaws.com/spaceriders-api:prod-latest
+    entrypoint: ["gunicorn", "-w", "3", "--threads", "4", "-k", "uvicorn.workers.UvicornWorker", "--timeout", "600", "--bind", "0.0.0.0:8000", "apps.http.__init__:app"]
+    networks:
+      - public
+    environment:
+      <<: *environment
+    deploy:
+      replicas: 2
+      update_config:
+        parallelism: 2
+        order: start-first
+        failure_action: rollback
+        delay: 10s
+      rollback_config:
+        parallelism: 0
+        order: stop-first
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.api-mainnet.tls=true"
+        - "traefik.http.routers.api-mainnet.tls.certresolver=le"
+        - "traefik.http.routers.api-mainnet.rule=Host(`api.mainnet.spaceriders.io`)"
+        - "traefik.http.services.api-mainnet.loadbalancer.server.port=8000"
+        - "traefik.docker.network=public"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  cronjob:
+    image: 657117221658.dkr.ecr.eu-west-1.amazonaws.com/spaceriders-api:prod-latest
+    entrypoint: ["python", "-m", "apps.cronjobs.__init__"]
+    networks:
+      - public
+    environment:
+      <<: *environment
+
+  websocket:
+    image: 657117221658.dkr.ecr.eu-west-1.amazonaws.com/spaceriders-api:prod-latest
+    entrypoint: ["gunicorn", "-w", "3", "--threads", "4", "-k", "uvicorn.workers.UvicornWorker", "--timeout", "600", "--bind", "0.0.0.0:8000", "apps.websockets.__init__:app"]
+    networks:
+      - public
+    environment:
+      <<: *environment
+    deploy:
+      replicas: 2
+      update_config:
+        parallelism: 2
+        order: start-first
+        failure_action: rollback
+        delay: 10s
+      rollback_config:
+        parallelism: 0
+        order: stop-first
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.ws-mainnet.tls=true"
+        - "traefik.http.routers.ws-mainnet.tls.certresolver=le"
+        - "traefik.http.routers.ws-mainnet.rule=Host(`ws.mainnet.spaceriders.io`)"
+        - "traefik.http.services.ws-mainnet.loadbalancer.server.port=8000"
+        - "traefik.http.services.ws-mainnet.loadbalancer.sticky=true"
+        - "traefik.http.services.ws-mainnet.loadbalancer.sticky.cookie.name=spr-ws-mainnet-sticky"
+        - "traefik.docker.network=public"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+networks:
+  public:
+    external: true
+    driver: overlay
