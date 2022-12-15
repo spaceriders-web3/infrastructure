@@ -1,0 +1,143 @@
+version: "3"
+services:
+    elasticsearch:
+        image: "docker.elastic.co/elasticsearch/elasticsearch:8.5.3"
+        environment:
+            - "ES_JAVA_OPTS=-Xms1g -Xmx1g"
+            - "discovery.type=single-node"
+            - http.port=9200
+            - http.host=0.0.0.0
+            - network.publish_host=elasticsearch
+        ports:
+            - "9200:9200"
+        volumes:
+            - elasticsearch_data:/usr/share/elasticsearch/data
+        networks:
+            - public
+        deploy:
+          replicas: 1
+          placement: 
+            constraints: [node.role == manager]
+          restart_policy:
+            condition: any
+            delay: 5s
+            max_attempts: 3
+            window: 120s
+
+    kibana:
+        image: "docker.elastic.co/kibana/kibana:8.5.3"
+        ports:
+            - "5601:5601"
+        networks:
+            - public
+        environment:
+            ELASTICSEARCH_HOSTS: '["http://elasticsearch:9200"]'
+        volumes:
+            - ./logging/kibana.yml:/usr/share/kibana/config/kibana.yml
+        deploy:
+          replicas: 1
+          placement: 
+            constraints: [node.role == manager]
+          restart_policy:
+            condition: any
+            delay: 5s
+            max_attempts: 3
+            window: 120s
+          labels:
+            - "traefik.enable=true"
+            - "traefik.http.routers.kibana.tls=true"
+            - "traefik.http.routers.kibana.tls.certresolver=le"
+            - "traefik.http.routers.kibana.rule=Host(`kibana.spaceriders.io`)"
+            - "traefik.http.services.kibana.loadbalancer.server.port=5601"
+            - "traefik.docker.network=public"
+
+    filebeat:
+        image: "docker.elastic.co/beats/filebeat:8.5.3"
+        user: root
+        volumes:
+            - ./logging/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+            - /var/lib/docker:/var/lib/docker:ro
+            - /var/run/docker.sock:/var/run/docker.sock
+        networks:
+            - public
+        deploy:
+          replicas: 1
+          placement: 
+            constraints: [node.role == manager]
+          restart_policy:
+            condition: any
+            delay: 5s
+            max_attempts: 3
+            window: 120s
+
+    metricbeat:
+        image: docker.elastic.co/beats/metricbeat:8.5.3
+        # https://github.com/docker/swarmkit/issues/1951
+        hostname: "{{.Node.Hostname}}-metricbeat"
+        user: root
+        networks:
+          - public
+        volumes:
+          - /proc:/hostfs/proc:ro
+          - /sys/fs/cgroup:/hostfs/sys/fs/cgroup:ro
+          - /:/hostfs:ro
+          - /var/run/docker.sock:/var/run/docker.sock
+          - ./logging/metricbeat.yml:/usr/share/metricbeat/metricbeat.yml:ro
+          - metricbeat:/usr/share/metricbeat/data
+        environment:
+          - ELASTICSEARCH_HOST=elasticsearch:9200
+          - KIBANA_HOST=kibana:5601
+          - ELASTICSEARCH_USERNAME=${ELASTICSEARCH_USERNAME:-elastic}
+          - ELASTICSEARCH_PASSWORD=${ELASTICSEARCH_PASSWORD:-changeme}
+        # disable strict permission checks
+        command: ["--strict.perms=false", "-system.hostfs=/hostfs"]
+        deploy:
+          replicas: 1
+          placement: 
+            constraints: [node.role == manager]
+          restart_policy:
+            condition: any
+            delay: 5s
+            max_attempts: 3
+            window: 120s
+
+    apmserver:
+        image: docker.elastic.co/apm/apm-server:8.5.3
+        cap_add: ["CHOWN", "DAC_OVERRIDE", "SETGID", "SETUID"]
+        cap_drop: ["ALL"]
+        networks:
+            - public
+        ports:
+            - 8200:8200
+        volumes:
+            - ./logging/apm.yml:/usr/share/apm-server/apm-server.yml:ro
+        command: >
+           apm-server -e
+             -E apm-server.rum.enabled=true
+             -E setup.kibana.host=kibana:5601
+             -E setup.template.settings.index.number_of_replicas=0
+             -E apm-server.kibana.enabled=true
+             -E apm-server.kibana.host=kibana:5601
+             -E output.elasticsearch.hosts=["elasticsearch:9200"]
+        healthcheck:
+          interval: 10s
+          retries: 12
+          test: curl --write-out 'HTTP %{http_code}' --fail --silent --output /dev/null http://localhost:8200/
+        deploy:
+          replicas: 1
+          placement: 
+            constraints: [node.role == manager]
+          restart_policy:
+            condition: any
+            delay: 5s
+            max_attempts: 3
+            window: 120s
+
+networks:
+  public:
+    external: true
+    driver: overlay
+
+volumes:
+    elasticsearch_data:
+    metricbeat:

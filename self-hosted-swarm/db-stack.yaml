@@ -1,0 +1,31 @@
+version: '3.7'
+
+services:
+  db:
+    image: mongo
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+    networks:
+      - public
+    ports:
+      - 27017:27017
+    volumes:
+      - db_data:/data/db
+    deploy:
+      replicas: 1
+      placement: 
+        constraints: [node.role == manager]
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+
+networks:
+  public:
+    external: true
+    driver: overlay
+
+volumes:
+   db_data:
